@@ -26,6 +26,23 @@ public class Spaceship : MonoBehaviour
     [SerializeField] AnimationCurve HighFrequencyMotorCurve;
     [SerializeField] [Range(0f, 1f)] float MaxHighFrequencyMotor = 0.5f;
 
+    [Header("Above Ground Check")]
+    [SerializeField] float AGC_MaximumRange = 2000f;
+    [SerializeField] float AGC_VerticalOffset = -1f;
+    [SerializeField] LayerMask AGC_LayerMask = ~0;
+
+    [Header("Thrust Induced Role")]
+    [SerializeField] float MaxThrustInducedTorque = 5f;
+    [SerializeField] AnimationCurve InducedTorqueVsThrustCurve;
+
+    [Header("Auto Levelling")]
+    [SerializeField] bool AutoLevel_Enabled = false;
+    [SerializeField] float AutoLevel_UpVectorInfluence = 0f;
+    [SerializeField] float AutoLevel_AngularVelocityInfluence = 0f;
+
+    public float CurrentVelocity { get; private set; } = 0f;
+    public float HeightAboveGround { get; private set; } = 0f;
+
     protected Rigidbody LinkedRB;
 
     Vector3 _Input_ThrustPrevious;
@@ -105,13 +122,42 @@ public class Spaceship : MonoBehaviour
                                                HighFrequencyMotorCurve.Evaluate(lightEngine) * MaxHighFrequencyMotor);
             }
         }
+
+        // check for the ground
+        RaycastHit hitInfo;
+        HeightAboveGround = -1f;
+        if (Physics.Raycast(transform.position + Vector3.up * AGC_VerticalOffset, Vector3.down, out hitInfo, 
+                            AGC_MaximumRange, AGC_LayerMask, QueryTriggerInteraction.Ignore))
+        {
+            HeightAboveGround = hitInfo.distance;
+        }
     }
 
     void FixedUpdate()
     {
+        // apply translational thrust
         Vector3 thrustVector = transform.right   * _Input_Thrust.x * MaxHForce +
                                transform.up      * _Input_Thrust.y * MaxVForce +
                                transform.forward * _Input_Thrust.z * MaxHForce;
         LinkedRB.AddForce(thrustVector, ForceMode.Force);
+
+        // apply thrust induced torque
+        float inducedRoll  = InducedTorqueVsThrustCurve.Evaluate(Mathf.Abs(_Input_Thrust.x)) * Mathf.Sign(_Input_Thrust.x);
+        float inducedPitch = InducedTorqueVsThrustCurve.Evaluate(Mathf.Abs(_Input_Thrust.z)) * Mathf.Sign(_Input_Thrust.z);
+        LinkedRB.AddTorque(inducedPitch * MaxThrustInducedTorque, 0f, inducedRoll * MaxThrustInducedTorque);
+
+        if (AutoLevel_Enabled)
+        {
+            Vector3 levelingVector = new Vector3(-transform.up.x, 0f, -transform.up.z);
+
+            float autoLevelRollComponent  = levelingVector.x * AutoLevel_UpVectorInfluence +
+                                            LinkedRB.angularVelocity.z * AutoLevel_AngularVelocityInfluence;
+            float autoLevelPitchComponent = levelingVector.z * AutoLevel_UpVectorInfluence +
+                                            -LinkedRB.angularVelocity.x * AutoLevel_AngularVelocityInfluence;
+
+            LinkedRB.AddTorque(autoLevelPitchComponent, 0f, -autoLevelRollComponent);
+        }
+
+        CurrentVelocity = LinkedRB.velocity.magnitude;
     }
 }
