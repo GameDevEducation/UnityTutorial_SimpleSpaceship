@@ -11956,7 +11956,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4397499150117160906}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 62899f850307741f2a39c98a8b639597, type: 3}
   m_Name: 
@@ -12117,6 +12117,35 @@ MonoBehaviour:
   AutoLevel_Enabled: 1
   AutoLevel_UpVectorInfluence: 200
   AutoLevel_AngularVelocityInfluence: 1000
+  AutoLand_Enabled: 1
+  AutoLand_MinHeight: 0.25
+  AutoLand_MaxHeight: 100
+  AutoLand_DistanceInfluence: -1000
+  AutoLand_SpeedInfluence: 10000
+  AutoLand_TargetSpeedVsDistance:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 10
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
 --- !u!1 &4397499150233979790
 GameObject:
   m_ObjectHideFlags: 0
@@ -12128,7 +12157,7 @@ GameObject:
   - component: {fileID: 4397499150233979789}
   - component: {fileID: 4397499150233979788}
   m_Layer: 6
-  m_Name: Interior Camera
+  m_Name: Spaceship Follow Camera
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -12141,7 +12170,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4397499150233979790}
-  m_LocalRotation: {x: 0.22975291, y: 0.000000018722702, z: -0.00000000441983, w: 0.973249}
+  m_LocalRotation: {x: 0.22975291, y: -0.000000018722702, z: 0.00000000441983, w: 0.973249}
   m_LocalPosition: {x: 0, y: 2.5, z: -5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -12179,7 +12208,7 @@ MonoBehaviour:
     ModeOverride: 0
     LensShift: {x: 0, y: 0}
     GateFit: 2
-    m_SensorSize: {x: 1.891492, y: 1}
+    m_SensorSize: {x: 1.891903, y: 1}
   m_Transitions:
     m_BlendHint: 0
     m_InheritPosition: 0

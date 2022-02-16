@@ -35,15 +35,26 @@ public class Spaceship : MonoBehaviour
     [SerializeField] float MaxThrustInducedTorque = 5f;
     [SerializeField] AnimationCurve InducedTorqueVsThrustCurve;
 
-    [Header("Auto Levelling")]
+    [Header("Auto Leveling")]
     [SerializeField] bool AutoLevel_Enabled = false;
     [SerializeField] float AutoLevel_UpVectorInfluence = 0f;
     [SerializeField] float AutoLevel_AngularVelocityInfluence = 0f;
+
+    [Header("Auto Landing")]
+    [SerializeField] bool AutoLand_Enabled = true;
+    [SerializeField] float AutoLand_MinHeight = 0.25f;
+    [SerializeField] float AutoLand_MaxHeight = 100f;
+    [SerializeField] float AutoLand_DistanceInfluence = 0f;
+    [SerializeField] float AutoLand_SpeedInfluence = 0f;
+    [SerializeField] AnimationCurve AutoLand_TargetSpeedVsDistance;
+    protected bool PerformAutoLand = false;
 
     public float CurrentVelocity { get; private set; } = 0f;
     public float HeightAboveGround { get; private set; } = 0f;
 
     protected Rigidbody LinkedRB;
+    protected float CurrentAutoLandNormalisedThrust = 0f;
+    protected float PreviousWorkingYThrust = 0f;
 
     Vector3 _Input_ThrustPrevious;
     Vector3 _Input_Thrust;
@@ -57,6 +68,11 @@ public class Spaceship : MonoBehaviour
     {
         float input = value.Get<float>();
         _Input_Thrust.y = InputTranslationCurve.Evaluate(Mathf.Abs(input)) * Mathf.Sign(input);
+    }
+    protected void OnToggleAutoLand(InputValue value)
+    {
+        if (value.isPressed && AutoLand_Enabled)
+            PerformAutoLand = !PerformAutoLand;
     }
 
     void Awake()
@@ -74,9 +90,11 @@ public class Spaceship : MonoBehaviour
     void Update()
     {
         // thrust input changed?
-        if (_Input_ThrustPrevious != _Input_Thrust)
+        float workingYThrust = _Input_Thrust.y + CurrentAutoLandNormalisedThrust;
+        if (_Input_ThrustPrevious != _Input_Thrust || PreviousWorkingYThrust != workingYThrust)
         {
             _Input_ThrustPrevious = _Input_Thrust;
+            PreviousWorkingYThrust = workingYThrust;
 
             // update X axis thrusters
             if (!Mathf.Approximately(_Input_Thrust.x, 0f))
@@ -91,10 +109,10 @@ public class Spaceship : MonoBehaviour
             }
 
             // update Y axis thrusters
-            if (!Mathf.Approximately(_Input_Thrust.y, 0f))
+            if (!Mathf.Approximately(workingYThrust, 0f))
             {
-                Engine_NegY.Thrust = _Input_Thrust.y < 0 ? Mathf.Abs(_Input_Thrust.y) : 0f;
-                Engine_PosY.Thrust = _Input_Thrust.y > 0 ? _Input_Thrust.y : 0f;
+                Engine_NegY.Thrust = workingYThrust < 0 ? Mathf.Abs(workingYThrust) : 0f;
+                Engine_PosY.Thrust = workingYThrust > 0 ? workingYThrust : 0f;
             }
             else
             {
@@ -123,18 +141,21 @@ public class Spaceship : MonoBehaviour
             }
         }
 
-        // check for the ground
-        RaycastHit hitInfo;
-        HeightAboveGround = -1f;
-        if (Physics.Raycast(transform.position + Vector3.up * AGC_VerticalOffset, Vector3.down, out hitInfo, 
-                            AGC_MaximumRange, AGC_LayerMask, QueryTriggerInteraction.Ignore))
-        {
-            HeightAboveGround = hitInfo.distance;
-        }
     }
 
     void FixedUpdate()
     {
+        // check for the ground
+        RaycastHit hitInfo;
+        HeightAboveGround = -1f;
+        if (Physics.Raycast(LinkedRB.position + Vector3.up * AGC_VerticalOffset, Vector3.down, out hitInfo,
+                            AGC_MaximumRange, AGC_LayerMask, QueryTriggerInteraction.Ignore))
+        {
+            HeightAboveGround = hitInfo.distance;
+        }
+
+        CurrentVelocity = LinkedRB.velocity.magnitude;
+
         // apply translational thrust
         Vector3 thrustVector = transform.right   * _Input_Thrust.x * MaxHForce +
                                transform.up      * _Input_Thrust.y * MaxVForce +
@@ -146,7 +167,11 @@ public class Spaceship : MonoBehaviour
         float inducedPitch = InducedTorqueVsThrustCurve.Evaluate(Mathf.Abs(_Input_Thrust.z)) * Mathf.Sign(_Input_Thrust.z);
         LinkedRB.AddTorque(inducedPitch * MaxThrustInducedTorque, 0f, inducedRoll * MaxThrustInducedTorque);
 
-        if (AutoLevel_Enabled)
+        bool autoLanding = PerformAutoLand && HeightAboveGround >= AutoLand_MinHeight && 
+                                              HeightAboveGround <= AutoLand_MaxHeight;
+
+        // can perform auto level
+        if (AutoLevel_Enabled || autoLanding)
         {
             Vector3 levelingVector = new Vector3(-transform.up.x, 0f, -transform.up.z);
 
@@ -158,6 +183,25 @@ public class Spaceship : MonoBehaviour
             LinkedRB.AddTorque(autoLevelPitchComponent, 0f, -autoLevelRollComponent);
         }
 
-        CurrentVelocity = LinkedRB.velocity.magnitude;
+        // can perform autoland?
+        if (autoLanding)
+        {
+            float targetVelocity = -AutoLand_TargetSpeedVsDistance.Evaluate(HeightAboveGround / AutoLand_MaxHeight);
+
+            float autoLandThrust = HeightAboveGround * AutoLand_DistanceInfluence +
+                                   (targetVelocity - LinkedRB.velocity.y) * AutoLand_SpeedInfluence;
+            autoLandThrust = Mathf.Clamp(autoLandThrust, -MaxVForce, MaxVForce);
+
+            CurrentAutoLandNormalisedThrust = autoLandThrust / MaxVForce;
+
+            LinkedRB.AddForce(transform.up * autoLandThrust, ForceMode.Force);
+        }
+        else
+        {
+            CurrentAutoLandNormalisedThrust = 0f;
+
+            if (HeightAboveGround <= AutoLand_MinHeight)
+                PerformAutoLand = false;
+        }
     }
 }
