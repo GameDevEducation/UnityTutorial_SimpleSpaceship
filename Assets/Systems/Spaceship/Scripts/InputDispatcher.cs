@@ -15,10 +15,16 @@ public class InputDispatcher : MonoBehaviour
         Spaceship
     }
 
+    [SerializeField] CharacterMotor PlayerController;
+    [SerializeField] GameObject PlayerHUD;
     [SerializeField] GameObject PlayerGO;
     [SerializeField] CinemachineVirtualCamera PlayerCamera;
+
+    [SerializeField] Spaceship SpaceshipController;
+    [SerializeField] GameObject SpaceshipHUD;
     [SerializeField] GameObject SpaceshipGO;
     [SerializeField] CinemachineVirtualCamera SpaceshipCamera;
+
     [SerializeField] ETarget InitialTarget = ETarget.Player;
     [SerializeField] ETarget RequestedTarget;
 
@@ -45,7 +51,9 @@ public class InputDispatcher : MonoBehaviour
 
     void TargetChanged()
     {
+        PlayerHUD.SetActive(CurrentTarget == ETarget.Player);
         PlayerCamera.enabled = CurrentTarget == ETarget.Player;
+        SpaceshipHUD.SetActive(CurrentTarget == ETarget.Spaceship);
         SpaceshipCamera.enabled = CurrentTarget == ETarget.Spaceship;
         LinkedInput.SwitchCurrentActionMap(CurrentTarget.ToString());
     }
@@ -108,5 +116,29 @@ public class InputDispatcher : MonoBehaviour
     {
         if (CurrentTarget == ETarget.Spaceship)
             SpaceshipGO.SendMessage("OnToggleAutoLand", value);
+    }
+
+    protected void OnEnterVehicle(InputValue value)
+    {
+        if (CurrentTarget == ETarget.Player)
+        {
+            if (SpaceshipController.AttemptToEnterVehicle(PlayerController))
+            {
+                RequestedTarget = ETarget.Spaceship;
+                TargetChanged();
+            }
+        }
+    }
+
+    protected void OnExitVehicle(InputValue value)
+    {
+        if (CurrentTarget == ETarget.Spaceship)
+        {
+            if (SpaceshipController.AttemptToExitVehicle(PlayerController))
+            {
+                RequestedTarget = ETarget.Player;
+                TargetChanged();
+            }
+        }
     }
 }

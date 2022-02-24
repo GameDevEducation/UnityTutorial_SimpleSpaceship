@@ -47,6 +47,22 @@ public class Spaceship : MonoBehaviour
     [SerializeField] float AutoLand_DistanceInfluence = 0f;
     [SerializeField] float AutoLand_SpeedInfluence = 0f;
     [SerializeField] AnimationCurve AutoLand_TargetSpeedVsDistance;
+
+    [Header("Entry and Exit")]
+    [SerializeField] float MaxPermittedEntryHeight = 1f;
+    [SerializeField] float MaxPermittedEntryDistance = 10f;
+    [SerializeField] float MaxPermittedExitHeight = 1f;
+    [SerializeField] float ExitMarkerRaycastRange = 2f;
+    [SerializeField] List<Transform> ExitMarkers;
+
+    [Header("Landing Camera")]
+    [SerializeField] GameObject LandingCameraDisplay;
+    [SerializeField] float MaxHeightToUseLandingCamera = 100f;
+    [SerializeField] Camera LandingCamera;
+    [SerializeField] float LandingCameraFPS = 30f;
+
+    protected float TimeUntilNextLandingCameraRefresh;
+
     protected bool PerformAutoLand = false;
 
     public float CurrentVelocity { get; private set; } = 0f;
@@ -141,6 +157,24 @@ public class Spaceship : MonoBehaviour
             }
         }
 
+        // can we use the landing camera
+        if (HeightAboveGround < MaxHeightToUseLandingCamera)
+        {
+            LandingCameraDisplay.SetActive(true);
+
+            // ready to render the next frame?
+            TimeUntilNextLandingCameraRefresh -= Time.deltaTime;
+            if (TimeUntilNextLandingCameraRefresh <= 0)
+            {
+                LandingCamera.Render();
+                TimeUntilNextLandingCameraRefresh = 1f / LandingCameraFPS;
+            }
+        }
+        else
+        {
+            TimeUntilNextLandingCameraRefresh = 0f;
+            LandingCameraDisplay.SetActive(false);
+        }
     }
 
     void FixedUpdate()
@@ -203,5 +237,50 @@ public class Spaceship : MonoBehaviour
             if (HeightAboveGround <= AutoLand_MinHeight)
                 PerformAutoLand = false;
         }
+    }
+
+    public bool AttemptToEnterVehicle(CharacterMotor player)
+    {
+        // too high to safely enter?
+        if (HeightAboveGround > MaxPermittedEntryHeight)
+            return false;
+
+        // too far to enter?
+        if (Vector3.Distance(player.transform.position, transform.position) > MaxPermittedEntryDistance)
+            return false;
+
+        // are we looking at the spaceship
+        Ray cameraRay = Camera.main.ScreenPointToRay(new Vector3(Screen.width / 2, Screen.height / 2, 0));
+        RaycastHit hitInfo;
+        if (Physics.Raycast(cameraRay, out hitInfo, MaxPermittedEntryDistance))
+        {
+            // are we looking at the spaceship
+            if (hitInfo.collider.GetComponentInParent<Spaceship>() == this)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public bool AttemptToExitVehicle(CharacterMotor player)
+    {
+        // too high to safely exit
+        if (HeightAboveGround > MaxPermittedExitHeight)
+            return false;
+
+        // attempt to find a valid marker
+        foreach(var marker in ExitMarkers)
+        {
+            RaycastHit hitInfo;
+            if (Physics.Raycast(marker.position, Vector3.down, out hitInfo, ExitMarkerRaycastRange))
+            {
+                player.transform.position = hitInfo.point;
+                return true;
+            }
+        }
+
+        return false; 
     }
 }
