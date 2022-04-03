@@ -831,7 +831,7 @@
                     "id": "e3596182-cca9-4201-8b7b-b27db19ddbf9",
                     "expectedControlType": "Button",
                     "processors": "",
-                    "interactions": "",
+                    "interactions": "Press(behavior=2)",
                     "initialStateCheck": false
                 },
                 {
@@ -1018,7 +1018,7 @@
                     "id": "d1f2c37d-5487-4509-9480-a76a71d4651c",
                     "path": "<Gamepad>/rightStick",
                     "interactions": "",
-                    "processors": "",
+                    "processors": "ScaleVector2(x=10,y=10)",
                     "groups": ";Gamepad",
                     "action": "Look",
                     "isComposite": false,

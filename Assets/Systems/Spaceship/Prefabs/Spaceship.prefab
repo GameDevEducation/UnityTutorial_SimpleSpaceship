@@ -12134,6 +12134,38 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7825493fe07c4224495c8619263cc3e1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  MaxHealth: 100
+  InitialHealth: 100
+  MinImpactSpeedToTakeDamage: 10
+  ImpactSpeedForCriticalDamage: 45
+  MinDamage: 1
+  ImpactDamageCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 2
+      outSlope: 2
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  TagsToIgnore:
+  - Player
+  RepairRate: 10
   Engine_NegX: {fileID: 4397499151725780354}
   Engine_PosX: {fileID: 4397499151638910894}
   Engine_NegY: {fileID: 4397499151607002715}
@@ -12173,8 +12205,41 @@ MonoBehaviour:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
-  MaxVForce: 15000
-  MaxHForce: 5000
+  _MaxVForce: 15000
+  _MaxHForce: 5000
+  ThrustImpactVsDamage:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 0.5
+      value: 0
+      inSlope: Infinity
+      outSlope: 1.1240048
+      tangentMode: 7
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.15091634
+    - serializedVersion: 3
+      time: 1
+      value: 0.5
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
   EnableHaptics: 0
   LowFrequencyMotorCurve:
     serializedVersion: 2
@@ -12301,6 +12366,21 @@ MonoBehaviour:
   MaxHeightToUseLandingCamera: 100
   LandingCamera: {fileID: 9093200125744742460}
   LandingCameraFPS: 30
+  OnSpaceshipDestroyed:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 0}
+        m_TargetAssemblyTypeName: InputDispatcher, Assembly-CSharp
+        m_MethodName: OnSpaceshipDestroyed
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
 --- !u!1 &4397499150233979790
 GameObject:
   m_ObjectHideFlags: 0

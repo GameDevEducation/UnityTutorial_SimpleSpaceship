@@ -31,6 +31,8 @@ public class InputDispatcher : MonoBehaviour
     protected PlayerInput LinkedInput;
     protected ETarget CurrentTarget;
 
+    protected bool SpaceshipAlive = true;
+
     private void Awake()
     {
         LinkedInput = GetComponent<PlayerInput>();
@@ -53,8 +55,11 @@ public class InputDispatcher : MonoBehaviour
     {
         PlayerHUD.SetActive(CurrentTarget == ETarget.Player);
         PlayerCamera.enabled = CurrentTarget == ETarget.Player;
+
         SpaceshipHUD.SetActive(CurrentTarget == ETarget.Spaceship);
-        SpaceshipCamera.enabled = CurrentTarget == ETarget.Spaceship;
+        if (SpaceshipAlive)
+            SpaceshipCamera.enabled = CurrentTarget == ETarget.Spaceship;
+
         LinkedInput.SwitchCurrentActionMap(CurrentTarget.ToString());
     }
 
@@ -120,6 +125,9 @@ public class InputDispatcher : MonoBehaviour
 
     protected void OnEnterVehicle(InputValue value)
     {
+        if (!SpaceshipAlive)
+            return;
+
         if (CurrentTarget == ETarget.Player)
         {
             if (SpaceshipController.AttemptToEnterVehicle(PlayerController))
@@ -140,5 +148,13 @@ public class InputDispatcher : MonoBehaviour
                 TargetChanged();
             }
         }
+    }
+
+    public void OnSpaceshipDestroyed()
+    {
+        SpaceshipAlive = false;
+        PlayerController.transform.position = SpaceshipController.transform.position;
+        RequestedTarget = ETarget.Player;
+        TargetChanged();
     }
 }

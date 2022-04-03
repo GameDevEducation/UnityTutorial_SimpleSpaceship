@@ -2,10 +2,21 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Events;
 
 [RequireComponent(typeof(Rigidbody))]
 public class Spaceship : MonoBehaviour
 {
+    [Header("Health and Damage")]
+    [SerializeField] int MaxHealth = 100;
+    [SerializeField] int InitialHealth = 100;
+    [SerializeField] float MinImpactSpeedToTakeDamage = 10f;
+    [SerializeField] float ImpactSpeedForCriticalDamage = 45f;
+    [SerializeField] int MinDamage = 1;
+    [SerializeField] AnimationCurve ImpactDamageCurve;
+    [SerializeField] List<string> TagsToIgnore;
+    [SerializeField] float RepairRate = 10f;
+
     [Header("Engines")]
     [SerializeField] RocketEngine Engine_NegX;
     [SerializeField] RocketEngine Engine_PosX;
@@ -16,8 +27,9 @@ public class Spaceship : MonoBehaviour
 
     [Header("Physics")]
     [SerializeField] AnimationCurve InputTranslationCurve;
-    [SerializeField] float MaxVForce = 15000;
-    [SerializeField] float MaxHForce = 5000f;
+    [SerializeField] float _MaxVForce = 15000;
+    [SerializeField] float _MaxHForce = 5000f;
+    [SerializeField] AnimationCurve ThrustImpactVsDamage;
 
     [Header("Haptics")]
     [SerializeField] bool EnableHaptics = true;
@@ -61,6 +73,8 @@ public class Spaceship : MonoBehaviour
     [SerializeField] Camera LandingCamera;
     [SerializeField] float LandingCameraFPS = 30f;
 
+    [SerializeField] UnityEvent OnSpaceshipDestroyed = new UnityEvent();
+
     protected float TimeUntilNextLandingCameraRefresh;
 
     protected bool PerformAutoLand = false;
@@ -71,6 +85,14 @@ public class Spaceship : MonoBehaviour
     protected Rigidbody LinkedRB;
     protected float CurrentAutoLandNormalisedThrust = 0f;
     protected float PreviousWorkingYThrust = 0f;
+
+    public int CurrentHealth { get; private set; } = int.MinValue;
+    public float HealthPercent => CurrentHealth / (float)MaxHealth;
+    public bool CanBeRepaired => CurrentHealth < MaxHealth;
+
+    protected float ThrustImpactFromDamage => ThrustImpactVsDamage.Evaluate(1f - HealthPercent);
+    protected float MaxVForce => _MaxVForce * (1f - ThrustImpactFromDamage);
+    protected float MaxHForce => _MaxHForce * (1f - ThrustImpactFromDamage);
 
     Vector3 _Input_ThrustPrevious;
     Vector3 _Input_Thrust;
@@ -94,6 +116,7 @@ public class Spaceship : MonoBehaviour
     void Awake()
     {
         LinkedRB = GetComponent<Rigidbody>();
+        CurrentHealth = InitialHealth;
     }
 
     // Start is called before the first frame update
@@ -283,4 +306,68 @@ public class Spaceship : MonoBehaviour
 
         return false; 
     }
+
+    private void OnCollisionEnter(Collision collision)
+    {
+        // ignore this tag
+        if (TagsToIgnore.Contains(collision.gameObject.tag))
+            return;
+
+        float impactVelocity = collision.relativeVelocity.magnitude;
+
+        // impact too low to take damage
+        if (impactVelocity < MinImpactSpeedToTakeDamage)
+            return;
+
+        // taken critical damage?
+        if (impactVelocity >= ImpactSpeedForCriticalDamage)
+        {
+            DestroySpaceship();
+            return;
+        }
+
+        // calculate the damage
+        float impactFactor = Mathf.InverseLerp(MinImpactSpeedToTakeDamage, ImpactSpeedForCriticalDamage, impactVelocity);
+        impactFactor = ImpactDamageCurve.Evaluate(impactFactor);
+        int damageTaken = Mathf.RoundToInt(Mathf.Lerp(MinDamage, MaxHealth, impactFactor));
+
+        // apply the damage
+        CurrentHealth = Mathf.Max(CurrentHealth - damageTaken, 0);
+
+        // have we been destroyed?
+        if (CurrentHealth <= 0)
+            DestroySpaceship();
+    }
+
+    void DestroySpaceship()
+    {
+        OnSpaceshipDestroyed.Invoke();
+        Destroy(gameObject);
+    }
+
+    public void StartRepair()
+    {
+        _CachedRepairAmount = 0f;
+    }
+
+    float _CachedRepairAmount = 0f;
+    public bool TickRepair()
+    {
+        _CachedRepairAmount += RepairRate * Time.deltaTime;
+
+        if (_CachedRepairAmount >= 1f)
+        {
+            int healthToAdd = Mathf.FloorToInt(_CachedRepairAmount);
+            CurrentHealth = Mathf.Min(CurrentHealth + healthToAdd, MaxHealth);
+
+            _CachedRepairAmount -= healthToAdd;
+        }
+
+        return CurrentHealth == MaxHealth;
+    }
+
+    public void StopRepair()
+    {
+    }
 }
+ 
