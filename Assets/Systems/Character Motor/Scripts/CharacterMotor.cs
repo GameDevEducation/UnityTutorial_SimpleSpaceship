@@ -1,23 +1,23 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.Events;
 using UnityEngine.EventSystems;
-using TMPro;
 
 [RequireComponent(typeof(Rigidbody))]
-public class CharacterMotor : MonoBehaviour
+public class CharacterMotor : MonoBehaviour, IDamageable
 {
     [SerializeField] protected CharacterMotorConfig Config;
-    [SerializeField] protected Transform LinkedCamera;
-
-    [SerializeField] protected TextMeshProUGUI RepairHUD;
 
     [SerializeField] protected UnityEvent<bool> OnRunChanged = new UnityEvent<bool> ();
     [SerializeField] protected UnityEvent<Vector3> OnHitGround = new UnityEvent<Vector3>();
     [SerializeField] protected UnityEvent<Vector3> OnBeginJump = new UnityEvent<Vector3>();
     [SerializeField] protected UnityEvent<Vector3, float> OnFootstep = new UnityEvent<Vector3, float>();
+
+    [SerializeField] protected UnityEvent<float, float> OnStaminaChanged = new UnityEvent<float, float> ();
+    [SerializeField] protected UnityEvent<float, float> OnHealthChanged = new UnityEvent<float, float>();
+    [SerializeField] protected UnityEvent<float> OnTookDamage = new UnityEvent<float>();
+    [SerializeField] protected UnityEvent<CharacterMotor> OnPlayerDied = new UnityEvent<CharacterMotor>();
 
     [Header("Debug Controls")]
     [SerializeField] protected bool DEBUG_OverrideMovement = false;
@@ -27,14 +27,21 @@ public class CharacterMotor : MonoBehaviour
 
     protected Rigidbody LinkedRB;
     protected CapsuleCollider LinkedCollider;
-    protected float CurrentCameraPitch = 0f;
-    protected float HeadbobProgress = 0f;
 
     protected float JumpTimeRemaining = 0f;
     protected float TimeSinceLastFootstepAudio = 0f;
     protected float TimeInAir = 0f;
     protected float OriginalDrag;
     protected float Camera_CurrentTime = 0f;
+
+    protected float PreviousStamina = 0f;
+    protected float StaminaRecoveryDelayRemaining = 0f;
+
+    protected float PreviousHealth = 0f;
+    protected float HealthRecoveryDelayRemaining = 0f;
+
+    public SurfaceEffectSource CurrentSurfaceSource { get; protected set; } = null;
+    protected float CurrentSurfaceLastTickTime;
 
     public bool IsMovementLocked { get; protected set; } = false;
     public bool IsLookingLocked { get; protected set; } = false;
@@ -47,11 +54,14 @@ public class CharacterMotor : MonoBehaviour
     public bool InCoyoteTime => CoyoteTimeRemaining > 0f;
     public bool IsGroundedOrInCoyoteTime => IsGrounded || InCoyoteTime;
     public bool IsCrouched { get; protected set; } = false;
-    public bool SendUIInteractions { get; protected set; } = true;
     public bool InCrouchTransition { get; protected set; } = false;
     public bool TargetCrouchState { get; protected set; } = false;
     public float CrouchTransitionProgress { get; protected set; } = 1f;
     public float CoyoteTimeRemaining { get; protected set; } = 0f;
+    public float CurrentStamina { get; protected set; } = 0f;
+    public float CurrentHealth { get; protected set; } = 0f;
+    public bool CanCurrentlyJump => Config.CanJump && CurrentStamina >= Config.StaminaCost_Jumping;
+    public bool CanCurrentlyRun => Config.CanRun && CurrentStamina > 0f;
 
     public float CurrentHeight
     {
@@ -68,136 +78,50 @@ public class CharacterMotor : MonoBehaviour
     {
         get
         {
+            float speed = 0f;
+
             if (IsGroundedOrInCoyoteTime || IsJumping)
-                return (IsRunning ? Config.RunSpeed : Config.WalkSpeed) * (IsCrouched ? Config.CrouchSpeedMultiplier : 1f);
+                speed = (IsRunning ? Config.RunSpeed : Config.WalkSpeed) * (IsCrouched ? Config.CrouchSpeedMultiplier : 1f);
+            else
+                speed = Config.CanAirControl ? Config.AirControlMaxSpeed : 0f;
 
-            return Config.CanAirControl ? Config.AirControlMaxSpeed : 0f;
+            return CurrentSurfaceSource != null ? CurrentSurfaceSource.Effect(speed, EEffectableParameter.Speed) : speed;
         }
     }
 
-
-    #region Input System Handling
     protected Vector2 _Input_Move;
-    protected void OnMove(InputValue value)
-    {
-        _Input_Move = value.Get<Vector2>();
-    }
-
     protected Vector2 _Input_Look;
-    protected void OnLook(InputValue value)
-    {
-        _Input_Look = value.Get<Vector2>();
-    }
-
     protected bool _Input_Jump;
-    protected void OnJump(InputValue value)
-    {
-        _Input_Jump = value.isPressed;
-    }
-
     protected bool _Input_Run;
-    protected void OnRun(InputValue value)
-    {
-        _Input_Run = value.isPressed;
-    }
-
     protected bool _Input_Crouch;
-    protected void OnCrouch(InputValue value)
-    {
-        _Input_Crouch = value.isPressed;
-    }    
-
     protected bool _Input_PrimaryAction;
-    protected Spaceship SpaceshipToBeRepaired = null;
-    protected void OnPrimaryAction(InputValue value)
-    {
-        _Input_PrimaryAction = value.isPressed;
-
-        // need to inject pointer event
-        if (_Input_PrimaryAction && SendUIInteractions)
-        {
-            PointerEventData pointerData = new PointerEventData(EventSystem.current);
-            pointerData.position = Mouse.current.position.ReadValue();
-
-            // raycast against the UI
-            List<RaycastResult> results = new List<RaycastResult>();
-            EventSystem.current.RaycastAll(pointerData, results);
-
-            foreach(RaycastResult result in results)
-            {
-                if (result.distance < Config.MaxInteractionDistance)
-                    ExecuteEvents.Execute(result.gameObject, pointerData, ExecuteEvents.pointerClickHandler);
-            }
-        }
-
-        if (_Input_PrimaryAction)
-        {
-            Ray cameraRay = Camera.main.ScreenPointToRay(new Vector3(Screen.width / 2, Screen.height / 2, 0));
-            RaycastHit hitInfo;
-            if (Physics.Raycast(cameraRay, out hitInfo, Config.MaxInteractionDistance))
-            {
-                // are we looking at the spaceship
-                Spaceship spaceshipController = hitInfo.collider.GetComponentInParent<Spaceship>();
-                if (spaceshipController != null && spaceshipController.CanBeRepaired)
-                {
-                    // spaceship changed
-                    if (spaceshipController != SpaceshipToBeRepaired && SpaceshipToBeRepaired != null)
-                    {
-                        RepairHUD.gameObject.SetActive(false);
-                        SpaceshipToBeRepaired.StopRepair();
-                    }
-
-                    SpaceshipToBeRepaired = spaceshipController;
-
-                    SpaceshipToBeRepaired.StartRepair();
-                    RepairHUD.gameObject.SetActive(true);
-                    RepairHUD.text = string.Empty;
-                }
-            }
-        }
-        else
-        {
-            if (SpaceshipToBeRepaired != null)
-            {
-                RepairHUD.gameObject.SetActive(false);
-                SpaceshipToBeRepaired.StopRepair();
-            }
-            SpaceshipToBeRepaired = null;
-        }
-    }
-
     protected bool _Input_SecondaryAction;
-    protected void OnSecondaryAction(InputValue value)
-    {
-        _Input_SecondaryAction = value.isPressed;
-    }
 
-    #endregion
-
-    private void Awake()
+    protected virtual void Awake()
     {
         LinkedRB = GetComponent<Rigidbody>();
-        LinkedCollider = GetComponent<CapsuleCollider>();
-        SendUIInteractions = Config.SendUIInteractions;
+        LinkedCollider = GetComponentInChildren<CapsuleCollider>();
+
+        PreviousStamina = CurrentStamina = Config.MaxStamina;
+        PreviousHealth = CurrentHealth = Config.MaxHealth;
     }
 
     // Start is called before the first frame update
-    void Start()
+    protected virtual void Start()
     {
-        SetCursorLock(true);
-
         LinkedCollider.material = Config.Material_Default;
         LinkedCollider.radius = Config.Radius;
         LinkedCollider.height = CurrentHeight;
         LinkedCollider.center = Vector3.up * (CurrentHeight * 0.5f);
 
-        LinkedCamera.transform.localPosition = Vector3.up * (CurrentHeight + Config.Camera_VerticalOffset);
-
         OriginalDrag = LinkedRB.drag;
+
+        OnStaminaChanged.Invoke(CurrentStamina, Config.MaxStamina);
+        OnHealthChanged.Invoke(CurrentHealth, Config.MaxHealth);
     }
 
     // Update is called once per frame
-    void Update()
+    protected virtual void Update()
     {
         if (DEBUG_ToggleLookLock)
         {
@@ -210,35 +134,19 @@ public class CharacterMotor : MonoBehaviour
             IsMovementLocked = !IsMovementLocked;
         }
 
-        if (SpaceshipToBeRepaired != null && _Input_PrimaryAction)
+        UpdateHealth();
+        UpdateStamina();
+
+        if (PreviousStamina != CurrentStamina)
         {
-            bool tickRepairs = false;
+            PreviousStamina = CurrentStamina;
+            OnStaminaChanged.Invoke(CurrentStamina, Config.MaxStamina);
+        }
 
-            // are we still looking at the spaceship?
-            Ray cameraRay = Camera.main.ScreenPointToRay(new Vector3(Screen.width / 2, Screen.height / 2, 0));
-            RaycastHit hitInfo;
-            if (Physics.Raycast(cameraRay, out hitInfo, Config.MaxInteractionDistance))
-            {
-                // are we looking at the spaceship
-                Spaceship spaceshipController = hitInfo.collider.GetComponentInParent<Spaceship>();
-                if (spaceshipController == SpaceshipToBeRepaired)
-                    tickRepairs = true;
-            }
-
-            // perform repairs
-            if (tickRepairs)
-            {
-                SpaceshipToBeRepaired.TickRepair();
-                RepairHUD.text = $"Repairing: {Mathf.RoundToInt(SpaceshipToBeRepaired.HealthPercent * 100)}%";
-            }
-
-            // clear the spaceship if repairs complete or if could not repair
-            if (!tickRepairs || !SpaceshipToBeRepaired.CanBeRepaired)
-            {
-                RepairHUD.gameObject.SetActive(false);
-                SpaceshipToBeRepaired.StopRepair();
-                SpaceshipToBeRepaired = null;
-            }
+        if (PreviousHealth != CurrentHealth)
+        {
+            PreviousHealth = CurrentHealth;
+            OnHealthChanged?.Invoke(CurrentHealth, Config.MaxHealth);
         }
     }
 
@@ -248,6 +156,8 @@ public class CharacterMotor : MonoBehaviour
         bool wasRunning = IsRunning;
 
         RaycastHit groundCheckResult = UpdateIsGrounded();
+
+        UpdateSurfaceEffects();
 
         // activate coyote time?
         if (wasGrounded && !IsGrounded)
@@ -282,10 +192,8 @@ public class CharacterMotor : MonoBehaviour
         UpdateMovement(groundCheckResult);
     }
 
-    protected void LateUpdate()
+    protected virtual void LateUpdate()
     {
-        UpdateCamera();
-
         UpdateCrouch();
     }
 
@@ -314,6 +222,13 @@ public class CharacterMotor : MonoBehaviour
             JumpTimeRemaining = 0f;
             IsInJumpingFallPhase = false;
 
+            // check for a surface effect
+            SurfaceEffectSource surfaceEffectSource = null;
+            if (hitResult.collider.gameObject.TryGetComponent<SurfaceEffectSource>(out surfaceEffectSource))
+                SetSurfaceEffectSource(surfaceEffectSource);
+            else
+                SetSurfaceEffectSource(null);
+
             // is autoparenting enabled?
             if (Config.AutoParent)
             {
@@ -339,7 +254,10 @@ public class CharacterMotor : MonoBehaviour
             }
         }
         else
+        {
+            SetSurfaceEffectSource(null);
             IsGrounded = false;
+        }
 
         return hitResult;
     }
@@ -383,6 +301,59 @@ public class CharacterMotor : MonoBehaviour
 
         // update the velocity
         LinkedRB.velocity = Vector3.MoveTowards(LinkedRB.velocity, movementVector, Config.Acceleration);
+    }
+
+    public void OnPerformHeal(GameObject source, float amount)
+    {
+        CurrentHealth = Mathf.Min(CurrentHealth + amount, Config.MaxHealth);
+    }
+
+    public void OnTakeDamage(GameObject source, float amount)
+    {
+        OnTookDamage.Invoke(amount);
+
+        CurrentHealth = Mathf.Max(CurrentHealth - amount, 0f);
+        HealthRecoveryDelayRemaining = Config.HealthRecoveryDelay;
+
+        // have we died?
+        if (CurrentHealth <= 0f && PreviousHealth > 0f)
+            OnPlayerDied.Invoke(this);
+    }
+
+    protected void UpdateHealth()
+    {
+        // do we have health to recover?
+        if (CurrentHealth < Config.MaxHealth)
+        {
+            if (HealthRecoveryDelayRemaining > 0f)
+                HealthRecoveryDelayRemaining -= Time.deltaTime;
+
+            if (HealthRecoveryDelayRemaining <= 0f)
+                CurrentHealth = Mathf.Min(CurrentHealth + Config.HealthRecoveryRate * Time.deltaTime,
+                                          Config.MaxHealth);
+        }
+    }
+
+    protected void UpdateStamina()
+    {
+        // if we're running consume stamina
+        if (IsRunning && IsGrounded)
+            ConsumeStamina(Config.StaminaCost_Running * Time.deltaTime);
+        else if (CurrentStamina < Config.MaxStamina) // if we're able to recover
+        {
+            if (StaminaRecoveryDelayRemaining > 0f)
+                StaminaRecoveryDelayRemaining -= Time.deltaTime;
+
+            if (StaminaRecoveryDelayRemaining <= 0f)
+                CurrentStamina = Mathf.Min(CurrentStamina + Config.StaminaRecoveryRate * Time.deltaTime,
+                                           Config.MaxStamina);
+        }
+    }
+
+    protected void ConsumeStamina(float amount)
+    {
+        CurrentStamina = Mathf.Max(CurrentStamina - amount, 0f);
+        StaminaRecoveryDelayRemaining = Config.StaminaRecoveryDelay;
     }
 
     protected void UpdateFootstepAudio()
@@ -441,7 +412,7 @@ public class CharacterMotor : MonoBehaviour
     {
         // jump requested?
         bool triggeredJumpThisFrame = false;
-        if (_Input_Jump)
+        if (_Input_Jump && CanCurrentlyJump)
         {
             _Input_Jump = false;
 
@@ -459,15 +430,21 @@ public class CharacterMotor : MonoBehaviour
                 if (JumpCount == 0)
                     triggeredJumpThisFrame = true;
 
+                float jumpTime = Config.JumpTime;
+                if (CurrentSurfaceSource != null)
+                    jumpTime = CurrentSurfaceSource.Effect(jumpTime, EEffectableParameter.JumpTime);
+
                 LinkedCollider.material = Config.Material_Jumping;
                 LinkedRB.drag = 0;
-                JumpTimeRemaining += Config.JumpTime;
+                JumpTimeRemaining += jumpTime;
                 IsInJumpingRisePhase = true;
                 IsInJumpingFallPhase = false;
                 CoyoteTimeRemaining = 0f;
                 ++JumpCount;
 
                 OnBeginJump.Invoke(LinkedRB.position);
+
+                ConsumeStamina(Config.StaminaCost_Jumping);
             }
         }
 
@@ -501,7 +478,12 @@ public class CharacterMotor : MonoBehaviour
                 }
                 else
                 {
-                    movementVector.y = Config.JumpVelocity;
+                    float jumpVelocity = Config.JumpVelocity;
+
+                    if (CurrentSurfaceSource != null)
+                        jumpVelocity = CurrentSurfaceSource.Effect(jumpVelocity, EEffectableParameter.JumpVelocity);
+
+                    movementVector.y = jumpVelocity;
                 }
             }
         }
@@ -509,6 +491,13 @@ public class CharacterMotor : MonoBehaviour
 
     protected void UpdateRunning(RaycastHit groundCheckResult)
     {
+        // no longer able to run?
+        if (!CanCurrentlyRun)
+        {
+            IsRunning = false;
+            return;
+        }
+
         // stop running if no input
         if (_Input_Move.magnitude < float.Epsilon)
             IsRunning = false;
@@ -535,67 +524,6 @@ public class CharacterMotor : MonoBehaviour
         }
         else
             IsRunning = _Input_Run;
-    }
-
-    protected void UpdateCamera()
-    {
-        // not allowed to look around?
-        if (IsLookingLocked)
-            return;
-
-        // ignore any camera input for a brief time (mostly helps editor side when hitting play button)
-        if (Camera_CurrentTime < Config.Camera_InitialDiscardTime)
-        {
-            Camera_CurrentTime += Time.deltaTime;
-            return;
-        }
-
-        // calculate our camera inputs
-        float cameraYawDelta = _Input_Look.x * Config.Camera_HorizontalSensitivity * Time.deltaTime;
-        float cameraPitchDelta = _Input_Look.y * Config.Camera_VerticalSensitivity * Time.deltaTime *
-                                 (Config.Camera_InvertY ? 1f : -1f);
-
-        // rotate the character
-        transform.localRotation = transform.localRotation * Quaternion.Euler(0f, cameraYawDelta, 0f);
-
-        // headbob enabled and on the ground?
-        if (Config.Headbob_Enable && IsGrounded)
-        {
-            float currentSpeed = LinkedRB.velocity.magnitude;
-
-            // moving fast enough to bob?
-            Vector3 defaultCameraOffset = Vector3.up * (CurrentHeight + Config.Camera_VerticalOffset);
-            if (currentSpeed >= Config.Headbob_MinSpeedToBob)
-            {
-                float speedFactor = currentSpeed / (Config.CanRun ? Config.RunSpeed : Config.WalkSpeed);
-
-                // update our progress
-                HeadbobProgress += Time.deltaTime / Config.Headbob_PeriodVsSpeedFactor.Evaluate(speedFactor);
-                HeadbobProgress %= 1f;
-
-                // determine the maximum translations
-                float maxVTranslation = Config.Headbob_VTranslationVsSpeedFactor.Evaluate(speedFactor);
-                float maxHTranslation = Config.Headbob_HTranslationVsSpeedFactor.Evaluate(speedFactor);
-
-                float sinProgress = Mathf.Sin(HeadbobProgress * Mathf.PI * 2f);
-
-                // update the camera location
-                defaultCameraOffset += Vector3.up * sinProgress * maxVTranslation;
-                defaultCameraOffset += Vector3.right * sinProgress * maxHTranslation;
-            }
-            else
-                HeadbobProgress = 0f;
-
-            LinkedCamera.transform.localPosition = Vector3.MoveTowards(LinkedCamera.transform.localPosition,
-                                                                       defaultCameraOffset,
-                                                                       Config.Headbob_TranslationBlendSpeed * Time.deltaTime);
-        }
-
-        // tilt the camera
-        CurrentCameraPitch = Mathf.Clamp(CurrentCameraPitch + cameraPitchDelta,
-                                         Config.Camera_MinPitch,
-                                         Config.Camera_MaxPitch);
-        LinkedCamera.transform.localRotation = Quaternion.Euler(CurrentCameraPitch, 0f, 0f);
     }
 
     protected void UpdateCrouch()
@@ -650,7 +578,6 @@ public class CharacterMotor : MonoBehaviour
             // update the collider and camera
             LinkedCollider.height = CurrentHeight;
             LinkedCollider.center = Vector3.up * (CurrentHeight * 0.5f);
-            LinkedCamera.transform.localPosition = Vector3.up * (CurrentHeight + Config.Camera_VerticalOffset);
 
             // finished changing crouch state
             if (Mathf.Approximately(CrouchTransitionProgress, TargetCrouchState ? 0f : 1f))
@@ -661,11 +588,6 @@ public class CharacterMotor : MonoBehaviour
         }
     }
 
-    public void SetCursorLock(bool locked)
-    {
-        Cursor.visible = !locked;
-        Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
-    }
 
     public void SetMovementLock(bool locked)
     {
@@ -675,5 +597,33 @@ public class CharacterMotor : MonoBehaviour
     public void SetLookLock(bool locked)
     {
         IsLookingLocked = locked;
+    }
+
+    void UpdateSurfaceEffects()
+    {
+        // no surface effect
+        if (CurrentSurfaceSource == null)
+            return;
+
+        // time to expire the surface effect?
+        if (CurrentSurfaceLastTickTime + CurrentSurfaceSource.PersistenceTime < Time.time)
+        {
+            CurrentSurfaceSource = null;
+            return;
+        }
+    }
+
+    void SetSurfaceEffectSource(SurfaceEffectSource newSource)
+    {
+        // changing to a new effect?
+        if (newSource != null && newSource != CurrentSurfaceSource)
+        {
+            CurrentSurfaceSource = newSource;
+            CurrentSurfaceLastTickTime = Time.time;
+        } // on same source?
+        else if (newSource != null && newSource == CurrentSurfaceSource)
+        {
+            CurrentSurfaceLastTickTime = Time.time;
+        }
     }
 }
