@@ -107,19 +107,19 @@ public class InputDispatcher : MonoBehaviour
 
     protected void OnHorizontalThrust(InputValue value)
     {
-        if (CurrentTarget == ETarget.Spaceship)
+        if (CurrentTarget == ETarget.Spaceship && SpaceshipAlive)
             SpaceshipGO.SendMessage("OnHorizontalThrust", value);
     }
 
     protected void OnVerticalThrust(InputValue value)
     {
-        if (CurrentTarget == ETarget.Spaceship)
+        if (CurrentTarget == ETarget.Spaceship && SpaceshipAlive)
             SpaceshipGO.SendMessage("OnVerticalThrust", value);
     }
 
     protected void OnToggleAutoLand(InputValue value)
     {
-        if (CurrentTarget == ETarget.Spaceship)
+        if (CurrentTarget == ETarget.Spaceship && SpaceshipAlive)
             SpaceshipGO.SendMessage("OnToggleAutoLand", value);
     }
 

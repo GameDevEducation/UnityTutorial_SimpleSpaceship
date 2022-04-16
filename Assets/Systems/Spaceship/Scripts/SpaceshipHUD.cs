@@ -22,6 +22,9 @@ public class SpaceshipHUD : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        if (LinkedSpaceship == null)
+            return;
+
         VelocityValue.text = $"Speed: {LinkedSpaceship.CurrentVelocity:0.0} m/s";
         LocationValue.text = $"Position: X {LinkedSpaceship.transform.position.x:n0} Y {LinkedSpaceship.transform.position.y:n0} Z {LinkedSpaceship.transform.position.z:n0}";
         if (LinkedSpaceship.HeightAboveGround >= 0)

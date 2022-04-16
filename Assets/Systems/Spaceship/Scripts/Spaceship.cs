@@ -5,6 +5,7 @@ using UnityEngine.InputSystem;
 using UnityEngine.Events;
 
 [RequireComponent(typeof(Rigidbody))]
+[RequireComponent(typeof(GravityTracker))]
 public class Spaceship : MonoBehaviour
 {
     [Header("Health and Damage")]
@@ -51,6 +52,7 @@ public class Spaceship : MonoBehaviour
     [SerializeField] bool AutoLevel_Enabled = false;
     [SerializeField] float AutoLevel_UpVectorInfluence = 0f;
     [SerializeField] float AutoLevel_AngularVelocityInfluence = 0f;
+    [SerializeField] float MinGravityToAutoLevel = 1f;
 
     [Header("Auto Landing")]
     [SerializeField] bool AutoLand_Enabled = true;
@@ -83,6 +85,7 @@ public class Spaceship : MonoBehaviour
     public float HeightAboveGround { get; private set; } = 0f;
 
     protected Rigidbody LinkedRB;
+    protected GravityTracker LocalGravity;
     protected float CurrentAutoLandNormalisedThrust = 0f;
     protected float PreviousWorkingYThrust = 0f;
 
@@ -116,6 +119,7 @@ public class Spaceship : MonoBehaviour
     void Awake()
     {
         LinkedRB = GetComponent<Rigidbody>();
+        LocalGravity = GetComponent<GravityTracker>();
         CurrentHealth = InitialHealth;
     }
 
@@ -205,7 +209,7 @@ public class Spaceship : MonoBehaviour
         // check for the ground
         RaycastHit hitInfo;
         HeightAboveGround = -1f;
-        if (Physics.Raycast(LinkedRB.position + Vector3.up * AGC_VerticalOffset, Vector3.down, out hitInfo,
+        if (Physics.Raycast(LinkedRB.position + LocalGravity.Up * AGC_VerticalOffset, LocalGravity.Down, out hitInfo,
                             AGC_MaximumRange, AGC_LayerMask, QueryTriggerInteraction.Ignore))
         {
             HeightAboveGround = hitInfo.distance;
@@ -228,9 +232,9 @@ public class Spaceship : MonoBehaviour
                                               HeightAboveGround <= AutoLand_MaxHeight;
 
         // can perform auto level
-        if (AutoLevel_Enabled || autoLanding)
+        if ((AutoLevel_Enabled || autoLanding) && LocalGravity.GravityVector.magnitude > MinGravityToAutoLevel)
         {
-            Vector3 levelingVector = new Vector3(-transform.up.x, 0f, -transform.up.z);
+            Vector3 levelingVector = LocalGravity.Up - transform.up;
 
             float autoLevelRollComponent  = levelingVector.x * AutoLevel_UpVectorInfluence +
                                             LinkedRB.angularVelocity.z * AutoLevel_AngularVelocityInfluence;
@@ -244,9 +248,10 @@ public class Spaceship : MonoBehaviour
         if (autoLanding)
         {
             float targetVelocity = -AutoLand_TargetSpeedVsDistance.Evaluate(HeightAboveGround / AutoLand_MaxHeight);
+            float currentVelocity = Vector3.Dot(LinkedRB.velocity, LocalGravity.Up);
 
             float autoLandThrust = HeightAboveGround * AutoLand_DistanceInfluence +
-                                   (targetVelocity - LinkedRB.velocity.y) * AutoLand_SpeedInfluence;
+                                   (targetVelocity - currentVelocity) * AutoLand_SpeedInfluence;
             autoLandThrust = Mathf.Clamp(autoLandThrust, -MaxVForce, MaxVForce);
 
             CurrentAutoLandNormalisedThrust = autoLandThrust / MaxVForce;
@@ -297,7 +302,7 @@ public class Spaceship : MonoBehaviour
         foreach(var marker in ExitMarkers)
         {
             RaycastHit hitInfo;
-            if (Physics.Raycast(marker.position, Vector3.down, out hitInfo, ExitMarkerRaycastRange))
+            if (Physics.Raycast(marker.position, LocalGravity.Down, out hitInfo, ExitMarkerRaycastRange))
             {
                 player.transform.position = hitInfo.point;
                 return true;
