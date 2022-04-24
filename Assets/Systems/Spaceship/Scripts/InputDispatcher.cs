@@ -123,6 +123,12 @@ public class InputDispatcher : MonoBehaviour
             SpaceshipGO.SendMessage("OnToggleAutoLand", value);
     }
 
+    protected void OnToggleAutoBraking(InputValue value)
+    {
+        if (CurrentTarget == ETarget.Spaceship && SpaceshipAlive)
+            SpaceshipGO.SendMessage("OnToggleAutoBraking", value);
+    }
+
     protected void OnEnterVehicle(InputValue value)
     {
         if (!SpaceshipAlive)

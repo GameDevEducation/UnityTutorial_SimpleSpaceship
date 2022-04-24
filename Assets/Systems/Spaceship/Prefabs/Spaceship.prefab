@@ -12291,8 +12291,14 @@ MonoBehaviour:
     m_PostInfinity: 2
     m_RotationOrder: 4
   AutoLevel_Enabled: 1
-  AutoLevel_UpVectorInfluence: 200
-  AutoLevel_AngularVelocityInfluence: 1000
+  AutoLevel_PitchErrorInfluence: 10
+  AutoLevel_PitchVelocityInfluence: -100
+  AutoLevel_RollErrorInfluence: 10
+  AutoLevel_RollVelocityInfluence: -100
+  MinGravityToAutoLevel: 1
+  AutoBraking_Enabled: 1
+  AutoBraking_LinearVelocityScale: -10000
+  AutoBraking_AngularVelocityScale: -100
   AutoLand_Enabled: 1
   AutoLand_MinHeight: 0.25
   AutoLand_MaxHeight: 100

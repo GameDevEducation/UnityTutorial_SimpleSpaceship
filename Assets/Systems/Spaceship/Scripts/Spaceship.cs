@@ -50,9 +50,16 @@ public class Spaceship : MonoBehaviour
 
     [Header("Auto Leveling")]
     [SerializeField] bool AutoLevel_Enabled = false;
-    [SerializeField] float AutoLevel_UpVectorInfluence = 0f;
-    [SerializeField] float AutoLevel_AngularVelocityInfluence = 0f;
+    [SerializeField] float AutoLevel_PitchErrorInfluence = 10f;
+    [SerializeField] float AutoLevel_PitchVelocityInfluence = 0f;
+    [SerializeField] float AutoLevel_RollErrorInfluence = 10f;
+    [SerializeField] float AutoLevel_RollVelocityInfluence = 0f;
     [SerializeField] float MinGravityToAutoLevel = 1f;
+
+    [Header("Auto Braking")]
+    [SerializeField] bool AutoBraking_Enabled = false;
+    [SerializeField] float AutoBraking_LinearVelocityScale = -10000f;
+    [SerializeField] float AutoBraking_AngularVelocityScale = -100f;
 
     [Header("Auto Landing")]
     [SerializeField] bool AutoLand_Enabled = true;
@@ -80,14 +87,15 @@ public class Spaceship : MonoBehaviour
     protected float TimeUntilNextLandingCameraRefresh;
 
     protected bool PerformAutoLand = false;
+    protected bool PerformAutoBraking = false;
 
     public float CurrentVelocity { get; private set; } = 0f;
     public float HeightAboveGround { get; private set; } = 0f;
 
     protected Rigidbody LinkedRB;
     protected GravityTracker LocalGravity;
-    protected float CurrentAutoLandNormalisedThrust = 0f;
-    protected float PreviousWorkingYThrust = 0f;
+    Vector3 NormalisedThrustVector;
+    Vector3 PreviousNormalisedThrustVector;
 
     public int CurrentHealth { get; private set; } = int.MinValue;
     public float HealthPercent => CurrentHealth / (float)MaxHealth;
@@ -115,6 +123,11 @@ public class Spaceship : MonoBehaviour
         if (value.isPressed && AutoLand_Enabled)
             PerformAutoLand = !PerformAutoLand;
     }
+    protected void OnToggleAutoBraking(InputValue value)
+    {
+        if (value.isPressed && AutoBraking_Enabled)
+            PerformAutoBraking = !PerformAutoBraking;
+    }
 
     void Awake()
     {
@@ -133,17 +146,15 @@ public class Spaceship : MonoBehaviour
     void Update()
     {
         // thrust input changed?
-        float workingYThrust = _Input_Thrust.y + CurrentAutoLandNormalisedThrust;
-        if (_Input_ThrustPrevious != _Input_Thrust || PreviousWorkingYThrust != workingYThrust)
+        if (NormalisedThrustVector != PreviousNormalisedThrustVector)
         {
-            _Input_ThrustPrevious = _Input_Thrust;
-            PreviousWorkingYThrust = workingYThrust;
+            PreviousNormalisedThrustVector = NormalisedThrustVector;
 
             // update X axis thrusters
-            if (!Mathf.Approximately(_Input_Thrust.x, 0f))
+            if (!Mathf.Approximately(NormalisedThrustVector.x, 0f))
             {
-                Engine_NegX.Thrust = _Input_Thrust.x < 0 ? Mathf.Abs(_Input_Thrust.x) : 0f;
-                Engine_PosX.Thrust = _Input_Thrust.x > 0 ? _Input_Thrust.x : 0f;
+                Engine_NegX.Thrust = NormalisedThrustVector.x < 0 ? Mathf.Abs(NormalisedThrustVector.x) : 0f;
+                Engine_PosX.Thrust = NormalisedThrustVector.x > 0 ? NormalisedThrustVector.x : 0f;
             }
             else
             {
@@ -152,10 +163,10 @@ public class Spaceship : MonoBehaviour
             }
 
             // update Y axis thrusters
-            if (!Mathf.Approximately(workingYThrust, 0f))
+            if (!Mathf.Approximately(NormalisedThrustVector.y, 0f))
             {
-                Engine_NegY.Thrust = workingYThrust < 0 ? Mathf.Abs(workingYThrust) : 0f;
-                Engine_PosY.Thrust = workingYThrust > 0 ? workingYThrust : 0f;
+                Engine_NegY.Thrust = NormalisedThrustVector.y < 0 ? Mathf.Abs(NormalisedThrustVector.y) : 0f;
+                Engine_PosY.Thrust = NormalisedThrustVector.y > 0 ? NormalisedThrustVector.y : 0f;
             }
             else
             {
@@ -164,10 +175,10 @@ public class Spaceship : MonoBehaviour
             }
 
             // update Z axis thrusters
-            if (!Mathf.Approximately(_Input_Thrust.z, 0f))
+            if (!Mathf.Approximately(NormalisedThrustVector.z, 0f))
             {
-                Engine_NegZ.Thrust = _Input_Thrust.z < 0 ? Mathf.Abs(_Input_Thrust.z) : 0f;
-                Engine_PosZ.Thrust = _Input_Thrust.z > 0 ? _Input_Thrust.z : 0f;
+                Engine_NegZ.Thrust = NormalisedThrustVector.z < 0 ? Mathf.Abs(NormalisedThrustVector.z) : 0f;
+                Engine_PosZ.Thrust = NormalisedThrustVector.z > 0 ? NormalisedThrustVector.z : 0f;
             }
             else
             {
@@ -177,8 +188,8 @@ public class Spaceship : MonoBehaviour
 
             if (EnableHaptics && Gamepad.current != null && Gamepad.current.enabled)
             {
-                float heavyEngine = Mathf.Abs(_Input_Thrust.y);
-                float lightEngine = Mathf.Clamp01(Mathf.Abs(_Input_Thrust.x) + Mathf.Abs(_Input_Thrust.z));
+                float heavyEngine = Mathf.Abs(NormalisedThrustVector.y);
+                float lightEngine = Mathf.Clamp01(Mathf.Abs(NormalisedThrustVector.x) + Mathf.Abs(NormalisedThrustVector.z));
                 Gamepad.current.SetMotorSpeeds(LowFrequencyMotorCurve.Evaluate(heavyEngine) * MaxLowFrequencyMotor,
                                                HighFrequencyMotorCurve.Evaluate(lightEngine) * MaxHighFrequencyMotor);
             }
@@ -221,28 +232,25 @@ public class Spaceship : MonoBehaviour
         Vector3 thrustVector = transform.right   * _Input_Thrust.x * MaxHForce +
                                transform.up      * _Input_Thrust.y * MaxVForce +
                                transform.forward * _Input_Thrust.z * MaxHForce;
-        LinkedRB.AddForce(thrustVector, ForceMode.Force);
 
-        // apply thrust induced torque
-        float inducedRoll  = InducedTorqueVsThrustCurve.Evaluate(Mathf.Abs(_Input_Thrust.x)) * Mathf.Sign(_Input_Thrust.x);
-        float inducedPitch = InducedTorqueVsThrustCurve.Evaluate(Mathf.Abs(_Input_Thrust.z)) * Mathf.Sign(_Input_Thrust.z);
-        LinkedRB.AddTorque(inducedPitch * MaxThrustInducedTorque, 0f, inducedRoll * MaxThrustInducedTorque);
-
-        bool autoLanding = PerformAutoLand && HeightAboveGround >= AutoLand_MinHeight && 
-                                              HeightAboveGround <= AutoLand_MaxHeight;
-
-        // can perform auto level
-        if ((AutoLevel_Enabled || autoLanding) && LocalGravity.GravityVector.magnitude > MinGravityToAutoLevel)
+        // performing auto braking?
+        if (PerformAutoBraking)
         {
-            Vector3 levelingVector = LocalGravity.Up - transform.up;
+            float compRight     = AutoBraking_LinearVelocityScale * Vector3.Dot(LinkedRB.velocity, transform.right);
+            float compUp        = AutoBraking_LinearVelocityScale * Vector3.Dot(LinkedRB.velocity, transform.up);
+            float compForward   = AutoBraking_LinearVelocityScale * Vector3.Dot(LinkedRB.velocity, transform.forward);
 
-            float autoLevelRollComponent  = levelingVector.x * AutoLevel_UpVectorInfluence +
-                                            LinkedRB.angularVelocity.z * AutoLevel_AngularVelocityInfluence;
-            float autoLevelPitchComponent = levelingVector.z * AutoLevel_UpVectorInfluence +
-                                            -LinkedRB.angularVelocity.x * AutoLevel_AngularVelocityInfluence;
+            thrustVector  = transform.right     * Mathf.Clamp(compRight,   -MaxHForce, MaxHForce);
+            thrustVector += transform.forward   * Mathf.Clamp(compForward, -MaxHForce, MaxHForce);
+            thrustVector += transform.up        * Mathf.Clamp(compUp,      -MaxVForce, MaxVForce);
 
-            LinkedRB.AddTorque(autoLevelPitchComponent, 0f, -autoLevelRollComponent);
+            LinkedRB.AddTorque(LinkedRB.angularVelocity.x * AutoBraking_AngularVelocityScale,
+                               LinkedRB.angularVelocity.y * AutoBraking_AngularVelocityScale,
+                               LinkedRB.angularVelocity.z * AutoBraking_AngularVelocityScale);
         }
+
+        bool autoLanding = !PerformAutoBraking && PerformAutoLand && 
+                            HeightAboveGround >= AutoLand_MinHeight && HeightAboveGround <= AutoLand_MaxHeight;
 
         // can perform autoland?
         if (autoLanding)
@@ -254,16 +262,49 @@ public class Spaceship : MonoBehaviour
                                    (targetVelocity - currentVelocity) * AutoLand_SpeedInfluence;
             autoLandThrust = Mathf.Clamp(autoLandThrust, -MaxVForce, MaxVForce);
 
-            CurrentAutoLandNormalisedThrust = autoLandThrust / MaxVForce;
+            // remove the vertical thrust
+            thrustVector = Vector3.Dot(thrustVector, transform.right) * transform.right +
+                           Vector3.Dot(thrustVector, transform.forward) * transform.forward;
 
-            LinkedRB.AddForce(transform.up * autoLandThrust, ForceMode.Force);
+            thrustVector += transform.up * autoLandThrust;
         }
         else
         {
-            CurrentAutoLandNormalisedThrust = 0f;
-
             if (HeightAboveGround <= AutoLand_MinHeight)
                 PerformAutoLand = false;
+        }
+
+        // update the normalised thrust vector
+        NormalisedThrustVector.x = thrustVector.x / MaxHForce;
+        NormalisedThrustVector.y = thrustVector.y / MaxHForce;
+        NormalisedThrustVector.z = thrustVector.z / MaxHForce;
+
+        LinkedRB.AddForce(thrustVector, ForceMode.Force);
+
+        // apply thrust induced torque
+        float inducedRoll  = InducedTorqueVsThrustCurve.Evaluate(Mathf.Abs(_Input_Thrust.x)) * Mathf.Sign(_Input_Thrust.x);
+        float inducedPitch = InducedTorqueVsThrustCurve.Evaluate(Mathf.Abs(_Input_Thrust.z)) * Mathf.Sign(_Input_Thrust.z);
+        LinkedRB.AddTorque(inducedPitch * MaxThrustInducedTorque, 0f, inducedRoll * MaxThrustInducedTorque);
+
+        // can perform auto level
+        if (!PerformAutoBraking && (AutoLevel_Enabled || autoLanding) && 
+            LocalGravity.GravityVector.magnitude > MinGravityToAutoLevel)
+        {
+            Vector3 levelingVector = Quaternion.FromToRotation(transform.up, LocalGravity.Up).eulerAngles;
+
+            if (levelingVector.x > 180f) levelingVector.x -= 360f;
+            if (levelingVector.y > 180f) levelingVector.y -= 360f;
+            if (levelingVector.z > 180f) levelingVector.z -= 360f;
+            if (levelingVector.x < -180f) levelingVector.x += 360f;
+            if (levelingVector.y < -180f) levelingVector.y += 360f;
+            if (levelingVector.z < -180f) levelingVector.z += 360f;
+
+            float autoLevelPitchComponent = levelingVector.x * AutoLevel_PitchErrorInfluence +
+                                            LinkedRB.angularVelocity.x * AutoLevel_PitchVelocityInfluence;
+            float autoLevelRollComponent  = levelingVector.z * AutoLevel_RollErrorInfluence +
+                                            LinkedRB.angularVelocity.z * AutoLevel_RollVelocityInfluence;
+
+            LinkedRB.AddTorque(autoLevelPitchComponent, 0f, autoLevelRollComponent);
         }
     }
 

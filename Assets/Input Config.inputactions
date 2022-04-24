@@ -33,6 +33,15 @@
                     "initialStateCheck": false
                 },
                 {
+                    "name": "ToggleAutoBraking",
+                    "type": "Button",
+                    "id": "7d8c07d8-5ed8-4d24-beba-3e6ac75eb2ad",
+                    "expectedControlType": "Button",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
                     "name": "ExitVehicle",
                     "type": "Button",
                     "id": "7d149a76-5d3b-41c2-95d0-2045ca6eb97b",
@@ -282,6 +291,28 @@
                     "processors": "",
                     "groups": "Gamepad",
                     "action": "ExitVehicle",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "25551622-07ad-43fa-84e3-e8c6553f32aa",
+                    "path": "<Gamepad>/buttonNorth",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Gamepad",
+                    "action": "ToggleAutoBraking",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "0aba3bf9-3a99-409d-b754-5f835903752e",
+                    "path": "<Keyboard>/b",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Keyboard&Mouse",
+                    "action": "ToggleAutoBraking",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }
